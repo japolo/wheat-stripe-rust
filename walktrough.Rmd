@@ -10,6 +10,9 @@ knitr::opts_chunk$set(echo = TRUE)
 library(raster)
 library(folderfun)
 library(sp)
+library(matrixStats)
+library(ggplot2)
+library(PoPS)
 folderfun::setff("In","C:/Users/Chris/Desktop/Projects/pops_casestudies/wheat-stripe-rust/data/") # This needs to be changed to your local directory
 
 ```
@@ -27,7 +30,7 @@ different from each other.
 # Initial conditions
 
 The experimental design was such that each field was plant exactly in the same manner and then
-1.33% of the total population of 
+1.2% of the total population of 
 
 ```{r data_prep}
 res <- 1.52
@@ -35,7 +38,7 @@ ns_ext <- 5
 we_ext <- 28
 control <- raster::raster(matrix(0, nrow = ns_ext, ncol =we_ext), xmn = 0, xmx = we_ext*res, ymn = 0, ymx = ns_ext*res)
 initial_infection <- raster::raster(matrix(0, nrow = ns_ext, ncol =we_ext), xmn = 0, xmx = we_ext*res, ymn = 0, ymx = ns_ext*res)
-initial_infection[3,4] <- 13
+initial_infection[3,4] <- 12
 ii_points <-  rasterToPoints(initial_infection, spatial = TRUE)
 ii_points <- ii_points[ii_points$layer > 0,]
 hosts <- raster::raster(matrix(1000, nrow = ns_ext, ncol =we_ext), xmn = 0, xmx = we_ext*res, ymn = 0, ymx = ns_ext*res)
@@ -46,8 +49,9 @@ treatment_3x3 <- treatment_foci
 treatment_3x3[2:4, 3:5] <- 1
 treatment_5x5 <- treatment_foci
 treatment_5x5[1:5, 2:6] <- 1
-sample_locations <- treatment_foci
-sample_locations[3, c(4,6,8,10,12,14, 16, 18, 20, 22, 24)] <- 1
+sample_locations <- raster::raster(matrix(0, nrow = ns_ext, ncol =we_ext), xmn = 0, xmx = we_ext*res, ymn = 0, ymx = ns_ext*res)
+sample_locations[3, c(3, 4,6,8,10,12,14, 16, 18, 20, 22, 24)] <- 1
+sample_locations[sample_locations == 0] <- NA
 sl_points <-  rasterToPoints(sample_locations, spatial = TRUE)
 sl_points <- sl_points[sl_points$layer > 0,]
 writeRaster(initial_infection, ffIn("infected.tif"), overwrite = TRUE)
@@ -57,13 +61,49 @@ writeRaster(treatment_foci, ffIn("treatments_foci.tif"), overwrite = TRUE)
 writeRaster(treatment_3x3, ffIn("treatments_3x3.tif"), overwrite = TRUE)
 writeRaster(treatment_5x5, ffIn("treatments_5x5.tif"), overwrite = TRUE)
 writeRaster(sample_locations, ffIn("sample_locations.tif"), overwrite = TRUE)
+
+```
+
+## Field Data
+
+We are using the field data to build our calibration and validation raster datasets.
+
+```{r field data}
 ## Still need to create e
+field_data <- read.csv(ffIn("Data.csv"))
+names(field_data) <- c("Treatment", "Block", "Size", "Timing", 
+                       "Plot", "Distance", "Severity_07-03", "Severity_06_26")
+field_data$Plot <- as.integer(as.factor(field_data$Plot))
+field_data <- field_data[,c(1,3:7)]
+control <- reshape(field_data[field_data$Treatment == 1,], 
+             idvar = c("Distance", "Size", "Timing", "Treatment"), 
+             timevar = "Plot", direction = "wide")
+control$mean_severity <- rowMeans(control[,5:9])
+control$sd_severity <- rowSds(as.matrix(control[,5:9]))
+control$column <- 4 + control$Distance/5 
+
+end_infection_control <- raster::raster(matrix(0, nrow = ns_ext, ncol =we_ext), xmn = 0, xmx = we_ext*res, ymn = 0, ymx = ns_ext*res)
+for (i in 1:nrow(control)) {
+  end_infection_control[3,control$column[i]] <- control$mean_severity[i]*10
+}
+
+if (!file.exists(ffIn("end_infection_control.tif"))){
+  writeRaster(end_infection_control, ffIn("end_infection_control.tif"), overwrite = TRUE)
+}
+
+
+### still need to set up the other 9 treatment data sets.
+foci_early <- reshape(field_data[field_data$Treatment == 2,], 
+                      idvar = c("Distance", "Size", "Timing", "Treatment"), 
+                      timevar = "Plot", direction = "wide")
+
 
 ```
 
 ## Plotting the experimental Setup
 
-s
+Here are the 4 different sizes of treatment. Then the 3 culling or host removal treatments are
+applied at
 
 ```{r experiment, echo=FALSE}
 plot(control, main = "Control Plots", sub = "With initial inoculation and sample locations", col = "gray95")
@@ -90,112 +130,114 @@ plot(sl_points, add = TRUE)
 
 ```{r}
 
-# infected_years_file <- ffIn("purelines_7weeks.tif")
-# number_of_observations <- 100  ### This is the number of infected cells or total observations - just make sure it's consistent across each temporal step of your data
-# prior_number_of_observations <- 0
-# prior_means <- c(0, 0, 0, 0, 0, 0)    ### leave as 0 for now, means that you are giving them no weight
-# prior_cov_matrix <- matrix(ncol = 6, nrow = 6, 0)
-# params_to_estimate <- c(T, T, F, F, T, F)  ### 1st: reproductive rates, 2nd: natural distance, 3rd: percent natural, 4tH: anthropogenic distance, 5th Natural Kappa, 6th anthropogenic kappa
-# number_of_generations <- 7 # this is how many generations the approximate bayesian computation algorithm runs
-# generation_size <- 50 # the number of accepted runs of the model below the threshold.
-# checks = c(90, 20000, 164000, 8000)   # 1: difference between number of infected cells in different years, 2: difference in distance in different years
-# # 3 and 4 don't matter if you keep the metric of success the same
-# infected_file <- ffIn("infected.tif")
-# host_file <- ffIn("hosts.tif")
-# total_plants_file <- ffIn("total_hosts.tif")
-# temp <- FALSE
-# temperature_coefficient_file <- ""
-# precip <- FALSE
-# precipitation_coefficient_file <- ""
-# model_type = "SEI"
-# latency_period = 16
-# time_step <- "day"
-# season_month_start <- 1
-# season_month_end <- 12
-# start_date <- '2003-01-01'
-# end_date <- '2003-02-18'
-# use_lethal_temperature <- FALSE
-# temperature_file <- ""
-# lethal_temperature <- -30
-# lethal_temperature_month <- 1
-# mortality_on <- FALSE
-# mortality_rate <- 0
-# mortality_time_lag <- 0
-# management <- FALSE
-# treatment_dates <- c('2003-01-24')
-# treatments_file <- ""
-# treatment_method <- "ratio"
-# natural_kernel_type <- "cauchy"
-# anthropogenic_kernel_type <- "cauchy"
-# natural_dir <- "E"
-# natural_kappa <- 0
-# anthropogenic_dir <- "NONE"
-# anthropogenic_kappa <- 0
-# pesticide_duration <- c(0)
-# pesticide_efficacy <- 1.0
-# mask <- NULL
-# success_metric <- "residual error"  # residual error makes a direct comparison to the field measurements that are of disease severity or infected area
-# output_frequency <- "week"
-# movements_file = ""  ## ignore - for when hosts move (animals moving from farm to farm)
-# use_movements = FALSE
-# percent_natural_dispersal <- 1.0
-# anthropogenic_distance_scale <- 0.0
-# 
-# calibrated_data <- abc_calibration(infected_years_file,
-#                                number_of_observations,
-#                                prior_number_of_observations,
-#                                prior_means, prior_cov_matrix,
-#                                params_to_estimate,
-#                                number_of_generations,
-#                                generation_size,
-#                                checks,
-#                                infected_file,
-#                                host_file,
-#                                total_plants_file,
-#                                temp,
-#                                temperature_coefficient_file,
-#                                precip,
-#                                precipitation_coefficient_file,
-#                                model_type,
-#                                latency_period,
-#                                time_step,
-#                                season_month_start,
-#                                season_month_end,
-#                                start_date,
-#                                end_date,
-#                                use_lethal_temperature,
-#                                temperature_file,
-#                                lethal_temperature,
-#                                lethal_temperature_month,
-#                                mortality_on,
-#                                mortality_rate,
-#                                mortality_time_lag,
-#                                management,
-#                                treatment_dates,
-#                                treatments_file,
-#                                treatment_method,
-#                                natural_kernel_type,
-#                                anthropogenic_kernel_type,
-#                                natural_dir,
-#                                natural_kappa,
-#                                anthropogenic_dir,
-#                                anthropogenic_kappa,
-#                                pesticide_duration,
-#                                pesticide_efficacy,
-#                                mask,
-#                                success_metric,
-#                                output_frequency,
-#                                movements_file,
-#                                use_movements)
-# 
-# means_purelines = as.data.frame(hyslop_farm$posterior_means)
-# cov_purelines = as.data.frame(hyslop_farm$posterior_cov_matrix)
-# raw_calib_purelines = as.data.frame(hyslop_farm$raw_calibration_data)
-# total_obs_purelines = as.data.frame(hyslop_farm$total_number_of_observations)
-# write.csv(total_obs_purelines, ffOut("total_obs.csv"))
-# write.csv(means_purelines, ffOut("means_purelines.csv"), row.names = FALSE)
-# write.csv(cov_purelines, ffOut("cov_purelines.csv"), row.names = FALSE)
-# write.csv(raw_calib_purelines, ffOut("raw_calib_purelines.csv"))
+infected_years_file <- ffIn("end_infection_control.tif")
+number_of_observations <- 100  # This is the number of infected cells or total observations make consistent across each temporal step of your data
+prior_number_of_observations <- 0 # in this case no weight is given to the prior
+prior_means <- c(0, 0, 0, 0, 0, 0)    # having all 0's 
+prior_cov_matrix <- matrix(ncol = 6, nrow = 6, 0)
+params_to_estimate <- c(T, T, F, F, F, F)  ### 1st: reproductive rates, 2nd: natural distance, 3rd: percent natural, 4tH: anthropogenic distance, 5th Natural Kappa, 6th anthropogenic kappa
+number_of_generations <- 7 # this is how many generations the approximate bayesian computation algorithm runs
+generation_size <- 200 # the number of accepted runs of the model below the threshold.
+checks = c(90, 20000, 2400, 2000)   # 1: difference between number of infected cells in different years, 2: difference in distance in different years
+# 3 and 4 don't matter if you keep the metric of success the same
+infected_file <- ffIn("infected.tif")
+host_file <- ffIn("hosts.tif")
+total_plants_file <- ffIn("total_hosts.tif")
+temp <- FALSE
+temperature_coefficient_file <- ""
+precip <- FALSE
+precipitation_coefficient_file <- ""
+model_type = "SEI"
+latency_period = 16
+time_step <- "day"
+season_month_start <- 1
+season_month_end <- 12
+start_date <- '2014-10-12'
+end_date <- '2014-12-31'
+use_lethal_temperature <- FALSE
+temperature_file <- ""
+lethal_temperature <- -30
+lethal_temperature_month <- 1
+mortality_on <- FALSE
+mortality_rate <- 0
+mortality_time_lag <- 0
+management <- FALSE
+treatment_dates <- c('2014-11-24') # currently set random date within the date range (need to change for actual treatments)
+treatments_file <- ""
+treatment_method <- "ratio"
+natural_kernel_type <- "cauchy"
+anthropogenic_kernel_type <- "cauchy"
+natural_dir <- "NONE"
+natural_kappa <- 0
+anthropogenic_dir <- "NONE"
+anthropogenic_kappa <- 0
+pesticide_duration <- c(0)
+pesticide_efficacy <- 1.0
+mask <- raster(ffIn("sample_locations.tif"))
+success_metric <- "residual error"  # residual error makes a direct comparison to the field measurements that are of disease severity or infected area
+output_frequency <- "year"
+movements_file = ""  ## ignore - for when hosts move (animals moving from farm to farm)
+use_movements = FALSE
+percent_natural_dispersal <- 1.0
+anthropogenic_distance_scale <- 0.0
+
+calibrated_data <- abc_calibration(infected_years_file,
+                               number_of_observations,
+                               prior_number_of_observations,
+                               prior_means, prior_cov_matrix,
+                               params_to_estimate,
+                               number_of_generations,
+                               generation_size,
+                               checks,
+                               infected_file,
+                               host_file,
+                               total_plants_file,
+                               temp,
+                               temperature_coefficient_file,
+                               precip,
+                               precipitation_coefficient_file,
+                               model_type,
+                               latency_period,
+                               time_step,
+                               season_month_start,
+                               season_month_end,
+                               start_date,
+                               end_date,
+                               use_lethal_temperature,
+                               temperature_file,
+                               lethal_temperature,
+                               lethal_temperature_month,
+                               mortality_on,
+                               mortality_rate,
+                               mortality_time_lag,
+                               management,
+                               treatment_dates,
+                               treatments_file,
+                               treatment_method,
+                               natural_kernel_type,
+                               anthropogenic_kernel_type,
+                               natural_dir,
+                               natural_kappa,
+                               anthropogenic_dir,
+                               anthropogenic_kappa,
+                               pesticide_duration,
+                               pesticide_efficacy,
+                               mask,
+                               success_metric,
+                               output_frequency,
+                               movements_file,
+                               use_movements)
+
+
+means_control = as.data.frame(calibrated_data$posterior_means)
+cov_control = as.data.frame(calibrated_data$posterior_cov_matrix)
+raw_calib_control = as.data.frame(calibrated_data$raw_calibration_data)
+total_obs_control = as.data.frame(calibrated_data$total_number_of_observations)
+write.csv(total_obs_control, ffIn("total_obs.csv"))
+write.csv(means_control, ffIn("means_control.csv"), row.names = FALSE)
+write.csv(cov_control, ffIn("cov_control.csv"), row.names = FALSE)
+write.csv(raw_calib_control, ffIn("raw_calib_control.csv"))
+
 ```
 
 
@@ -205,31 +247,32 @@ plot(sl_points, add = TRUE)
 
 
 
-```{r pressure, echo=FALSE}
-
+```{r calibration curves, echo=FALSE}
+params <- data.frame(MASS::mvrnorm(200000, parameter_means, parameter_cov_matrix))
+ggplot(params, aes(x = X1, fill = X1)) + geom_density(alpha = 0.5) + theme_classic()
+ggplot(params, aes(x = X2, fill = X1)) + geom_density(alpha = 0.5) + theme_classic()
 ```
 
 ## Run model
 
 ```{r}
 
-infected_years_file <- ffIn("purelines_7weeks.tif")
-parameter_means <- read.csv(ffIncal("means_purelines.csv"))[[1]]
-parameter_cov_matrix <- read.csv(ffIncal("cov_purelines.csv"))
-# infected_file <- ffIn("infected.tif")
-# host_file <- ffIn("hosts.tif")
-# total_plants_file <- ffIn("total_hosts.tif")
+parameter_means <- read.csv(ffIn("means_control.csv"))[[1]]
+parameter_cov_matrix <- read.csv(ffIn("cov_control.csv"))
+infected_file <- ffIn("infected.tif")
+host_file <- ffIn("hosts.tif")
+total_plants_file <- ffIn("total_hosts.tif")
 temp <- FALSE
 temperature_coefficient_file <- ""
 precip <- FALSE
 precipitation_coefficient_file <- ""
 model_type = "SEI"
-latency_period = 14
+latency_period = 16
 time_step <- "day"
 season_month_start <- 1
 season_month_end <- 12
-start_date <- '2003-01-01'
-end_date <- '2003-02-18'
+start_date <- '2014-10-12'
+end_date <- '2014-12-31'
 use_lethal_temperature <- FALSE
 temperature_file <- ""
 lethal_temperature <- -30
@@ -238,7 +281,7 @@ mortality_on <- FALSE
 mortality_rate <- 0
 mortality_time_lag <- 0
 management <- FALSE
-treatment_dates <- c('2003-01-24')
+treatment_dates <- c('2014-11-24') # currently set random date within the date range (need to change for actual treatments)
 treatments_file <- ""
 treatment_method <- "ratio"
 natural_kernel_type <- "cauchy"
@@ -247,51 +290,52 @@ natural_dir <- "E"
 anthropogenic_dir <- "NONE"
 pesticide_duration <- c(0)
 pesticide_efficacy <- 1.0
-mask <- NULL
-success_metric <- "residual error"  ### keep this the same
-output_frequency <- "week"
-movements_file = ""  ## ignore - for pigs
+output_frequency <- "year"
+movements_file = ""  ## ignore - for when hosts move (animals moving from farm to farm)
 use_movements = FALSE
 number_of_iterations <- 10
 number_of_cores <- 2
-s <- pops_multirun(infected_file, 
-                   host_file, 
+
+s <- pops_multirun(infected_file,
+                   host_file,
                    total_plants_file,
                    parameter_means,
                    parameter_cov_matrix,
-                   temp, 
-                   temperature_coefficient_file, 
-                   precip, 
+                   temp,
+                   temperature_coefficient_file,
+                   precip,
                    precipitation_coefficient_file,
-                   model_type, 
+                   model_type,
                    latency_period,
-                   time_step, 
-                   season_month_start, 
-                   season_month_end, 
-                   start_date, 
-                   end_date, 
+                   time_step,
+                   season_month_start,
+                   season_month_end,
+                   start_date,
+                   end_date,
                    use_lethal_temperature,
                    temperature_file,
-                   lethal_temperature, 
+                   lethal_temperature,
                    lethal_temperature_month,
-                   mortality_on, 
-                   mortality_rate, 
-                   mortality_time_lag, 
-                   management, 
-                   treatment_dates, 
+                   mortality_on,
+                   mortality_rate,
+                   mortality_time_lag,
+                   management,
+                   treatment_dates,
                    treatments_file,
                    treatment_method,
-                   natural_kernel_type, 
+                   natural_kernel_type,
                    anthropogenic_kernel_type,
-                   natural_dir, 
-                   anthropogenic_dir, 
-                   number_of_iterations, 
+                   natural_dir,
+                   anthropogenic_dir,
+                   number_of_iterations,
                    number_of_cores,
                    pesticide_duration,
                    pesticide_efficacy,
                    random_seed = NULL,
                    output_frequency,
-                   movements_file, 
+                   movements_file,
                    use_movements)
+
+
 ```
 
