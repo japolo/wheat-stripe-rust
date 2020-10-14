@@ -1,4 +1,4 @@
-# devtools::install_github("ncsu-landscape-dynamics/rpops")
+# devtools::install_github("ncsu-landscape-dynamics/rpops", ref = "spatial-index")
 library(PoPS)
 library(folderfun)
 library(raster)
